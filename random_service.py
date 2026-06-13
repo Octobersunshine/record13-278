@@ -92,9 +92,57 @@ class RandomService:
     def randints(self, low: int, high: int, count: int) -> List[int]:
         if count < 0:
             raise ValueError("Count cannot be negative")
-        return [self.randint(low, high) for _ in range(count)]
+        if self.secure:
+            span = high - low + 1 if low <= high else low - high + 1
+            lo, hi = (low, high) if low <= high else (high, low)
+            return [lo + secrets.randbelow(span) for _ in range(count)]
+        return [self._rng.randint(low, high) for _ in range(count)]
 
     def uniforms(self, low: float, high: float, count: int) -> List[float]:
         if count < 0:
             raise ValueError("Count cannot be negative")
-        return [self.uniform(low, high) for _ in range(count)]
+        lo, hi = (low, high) if low <= high else (high, low)
+        if self.secure:
+            span = hi - lo
+            return [lo + (secrets.randbelow(2 ** 53) / (2 ** 53)) * span for _ in range(count)]
+        return [self._rng.uniform(lo, hi) for _ in range(count)]
+
+    def randranges(self, start: int, stop: Optional[int] = None, step: int = 1, count: int = 1) -> List[int]:
+        if count < 0:
+            raise ValueError("Count cannot be negative")
+        return [self.randrange(start, stop, step) for _ in range(count)]
+
+    def choices(
+        self,
+        population: List[Union[int, float, str]],
+        k: int = 1,
+        weights: Optional[List[Union[int, float]]] = None,
+    ) -> List[Union[int, float, str]]:
+        if not population:
+            raise ValueError("Cannot choose from an empty population")
+        if k < 0:
+            raise ValueError("Cannot choose a negative number of elements")
+        if weights is not None and len(weights) != len(population):
+            raise ValueError("Length of weights must match length of population")
+        if weights is None:
+            if self.secure:
+                n = len(population)
+                return [population[secrets.randbelow(n)] for _ in range(k)]
+            return self._rng.choices(population, k=k)
+        cumulative: List[float] = []
+        total = 0.0
+        for w in weights:
+            total += w
+            cumulative.append(total)
+        if total <= 0:
+            raise ValueError("Total of weights must be greater than zero")
+        if self.secure:
+            result: List[Union[int, float, str]] = []
+            for _ in range(k):
+                threshold = (secrets.randbelow(2 ** 53) / (2 ** 53)) * total
+                for i, cum in enumerate(cumulative):
+                    if threshold < cum:
+                        result.append(population[i])
+                        break
+            return result
+        return self._rng.choices(population, weights=weights, k=k)
